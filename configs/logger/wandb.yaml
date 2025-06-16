@@ -1,0 +1,6 @@
+wandb_mode: "online"
+project: "ensamble-semantic-uncertainty"
+entity: "keram"
+log_model: False
+logging_steps: 1
+report_to: "wandb"

@@ -1,0 +1,14 @@
+name: "gemma"
+version: 2.0
+size: "2B"
+model_name: "google/gemma-2-2b"
+model_it_name: "google/gemma-2-2b-it"
+
+
+model_spec:
+  _target_: transformers.AutoModelForCausalLM.from_pretrained
+  pretrained_model_name_or_path: ${models.gemma2.model_name}
+
+tokenizer_spec:
+  _target_: transformers.AutoTokenizer.from_pretrained
+  pretrained_model_name_or_path: ${models.gemma2.model_name}

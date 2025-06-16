@@ -1,0 +1,6 @@
+num_few_shot: 10
+brief_response: True
+brief_prompt: "Answer the following question in a single brief but complete sentence.\n"
+use_context: True
+append_answer: True
+seed: ${seed}

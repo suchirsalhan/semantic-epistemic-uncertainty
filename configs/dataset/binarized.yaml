@@ -1,0 +1,6 @@
+name: "binarized"
+huggingface_dataset_id: "trl-lib/ultrafeedback_binarized"
+
+spec:
+  _target_: datasets.load_dataset
+  path: ${dataset.huggingface_dataset_id}

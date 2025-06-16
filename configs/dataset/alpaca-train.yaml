@@ -1,0 +1,7 @@
+name: alpaca
+huggingface_dataset_id: "tatsu-lab/alpaca"
+split: train
+
+spec:
+  _target_: datasets.load_dataset
+  path: ${dataset.huggingface_dataset_id}

@@ -1,0 +1,10 @@
+name: "svamp"
+huggingface_dataset_id: "ChilleD/SVAMP"
+
+answer_key: "Answer"
+question_key: "Question"
+
+spec:
+  _target_: datasets.load_dataset
+  path: ${dataset.huggingface_dataset_id}
+  split: train
