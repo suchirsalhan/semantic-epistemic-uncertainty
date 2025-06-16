@@ -1,3 +1,0 @@
-[2025-06-16 14:13:32,873][root][INFO] - Loaded configuration:
-[2025-06-16 14:13:32,873][root][INFO] - {'name': 'squad_v2', 'huggingface_dataset_id': 'squad_v2', 'spec': {'_target_': 'datasets.load_dataset', 'path': '${dataset.huggingface_dataset_id}', 'split': 'train'}}
-[2025-06-16 14:13:35,747][datasets][INFO] - PyTorch version 2.7.0 available.
