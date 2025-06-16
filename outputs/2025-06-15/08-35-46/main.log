@@ -1,2 +1,0 @@
-[2025-06-15 08:35:46,318][root][INFO] - Loaded configuration:
-[2025-06-15 08:35:46,318][root][INFO] - {'name': 'squad_v2', 'huggingface_dataset_id': 'squad_v2', 'spec': {'_target_': 'datasets.load_dataset', 'pretrained_model_name_or_path': '${dataset.huggingface_dataset_id}'}}

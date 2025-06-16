@@ -2,6 +2,8 @@ defaults:
   - _self_
   - logger: wandb_disabled
   - generation: default
+  - uncertainty: default
+  - analysis: default
   # - override hydra/launcher: submitit_slurm
   # below is a list of models, which will be included
   # in the ensamble; to add/remove a model (un)comment 
@@ -11,7 +13,7 @@ defaults:
   # to have multiple instances of the same model,
   # add it to the list again with a different 
   # namespace name, e.g.:
-  - models/llama_3_1b@models.llama3_second_instance
+  # - models/llama_3_1b@models.llama3_second_instance
   - dataset: svamp
 seed: 42
 checkpoint_dir: adapter

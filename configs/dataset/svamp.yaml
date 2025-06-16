@@ -3,6 +3,7 @@ huggingface_dataset_id: "ChilleD/SVAMP"
 
 answer_key: "Answer"
 question_key: "Question"
+answerable_only: True
 
 spec:
   _target_: datasets.load_dataset

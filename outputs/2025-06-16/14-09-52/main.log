@@ -1,3 +1,0 @@
-[2025-06-16 14:09:52,083][root][INFO] - Loaded configuration:
-[2025-06-16 14:09:52,083][root][INFO] - {'name': 'svamp', 'huggingface_dataset_id': 'ChilleD/SVAMP', 'spec': {'_target_': 'datasets.load_dataset', 'path': '${dataset.huggingface_dataset_id}', 'split': 'train'}}
-[2025-06-16 14:09:55,362][datasets][INFO] - PyTorch version 2.7.0 available.
