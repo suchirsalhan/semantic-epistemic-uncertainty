@@ -44,30 +44,37 @@ def main(cfg: DictConfig):
         mode=cfg.logger.wandb_mode  # NOTE: disabled by default
     )
 
+    # store intermediate results from each
+    # member of the ensemble
     ensemble_generations = {}
     ensemble_entropies = {}
     ensemble_analysis = {}
-    # instantiate all selected models and
-    # their tokenizers for the ensemble
     for name, config in cfg.models.items():
-        # model = instantiate(config.model_spec)
-        # tokenizer = instantiate(config.tokenizer_spec)
+        # generating raw results from an LLM
+        # split by ['train', 'test'] dataset splits
         split_results, split_generations = collect_generations(config, cfg)
         ensemble_generations[name] = (split_generations, split_results)
+
+        # computing semantic entropies for
+        # each member of the ensemble
         ensemble_entropies[name] = compute_uncertainty_measures_for_generations(
             split_results, split_generations, cfg
         )
+
+        # analyse the uncertainty results
         ensemble_analysis[name] = analyse_generations(
             ensemble_entropies[name], cfg)
 
-    with open('all.pickle', 'wb+') as f:
-        pickle.dump(
-            (
-                ensemble_generations,
-                ensemble_entropies,
-                ensemble_analysis
-            ), f
-        )
+    # conditionally save all results
+    if cfg.save_all:
+        with open('all.pickle', 'wb+') as f:
+            pickle.dump(
+                (
+                    ensemble_generations,
+                    ensemble_entropies,
+                    ensemble_analysis
+                ), f
+            )
 
     pprint(ensemble_analysis)
 

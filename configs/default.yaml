@@ -16,5 +16,6 @@ defaults:
   # - models/llama_3_1b@models.llama3_second_instance
   - dataset: svamp
 seed: 42
+save_all: True
 checkpoint_dir: adapter
 experiment_name: ${models}_eval
