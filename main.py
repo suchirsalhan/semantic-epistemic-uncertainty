@@ -5,14 +5,13 @@ import torch
 import hydra
 import random
 import numpy as np
-from trl import setup_chat_format
 from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed
 from hydra.utils import instantiate
 from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 import logging
 from pprint import pprint
-from src.generations import analyse_generations, compute_uncertainty_measures_for_generations, collect_generations
+from src.oatml_generations import analyse_generations, compute_uncertainty_measures_for_generations, collect_generations
 
 
 @hydra.main(
@@ -44,26 +43,9 @@ def main(cfg: DictConfig):
         mode=cfg.logger.wandb_mode  # NOTE: disabled by default
     )
 
-    # store intermediate results from each
-    # member of the ensemble
-    ensemble_generations = {}
-    ensemble_entropies = {}
-    ensemble_analysis = {}
-    for name, config in cfg.models.items():
-        # generating raw results from an LLM
-        # split by ['train', 'test'] dataset splits
-        split_results, split_generations = collect_generations(config, cfg)
-        ensemble_generations[name] = (split_generations, split_results)
-
-        # computing semantic entropies for
-        # each member of the ensemble
-        ensemble_entropies[name] = compute_uncertainty_measures_for_generations(
-            split_results, split_generations, cfg
-        )
-
-        # analyse the uncertainty results
-        ensemble_analysis[name] = analyse_generations(
-            ensemble_entropies[name], cfg)
+    ensemble_generations, ensemble_entropies, ensemble_analysis = instantiate(
+        cfg.uncertainty.eval_function, cfg
+    )
 
     # conditionally save all results
     if cfg.save_all:

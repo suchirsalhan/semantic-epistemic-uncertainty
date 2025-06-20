@@ -260,7 +260,6 @@ def collect_generations(model_cfg, cfg):
 
 
 def compute_uncertainty_measures_for_generations(split_result_dict, split_generations, cfg):
-
     # Load entailment model.
     if cfg.uncertainty.compute_predictive_entropy:
         logging.info('Beginning loading for entailment model.')

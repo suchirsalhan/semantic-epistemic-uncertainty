@@ -1,3 +1,12 @@
+from hydra.utils import instantiate
+import torch
+
+from src.similarity_sensitive_entropy.similarity_functions import Similarity
+
+device = 'cuda' if torch.cuda.is_available() else \
+    'mps' if torch.mps.is_available() else 'cpu'
+
+
 def get_prompt_formatting_fn(cfg, dataset_cfg):
     def formatting_fn(example):
         prompt = ''
@@ -49,3 +58,61 @@ def format_dataset_to_prompts(dataset, cfg, dataset_cfg):
 
 def get_prompt(prompt_dataset):
     return ''.join([entry['prompt'] for entry in prompt_dataset])
+
+
+def oatml_ensemble(cfg):
+    # store intermediate results from each
+    # member of the ensemble
+    ensemble_generations = {}
+    ensemble_entropies = {}
+    ensemble_analysis = {}
+    for name, config in cfg.models.items():
+        # generating raw results from an LLM
+        # split by ['train', 'test'] dataset splits
+        split_results, split_generations = instantiate(
+            cfg.uncertainty.collect_generations, config, cfg
+        )
+        ensemble_generations[name] = (split_generations, split_results)
+
+        # computing semantic entropies for
+        # each member of the ensemble
+        ensemble_entropies[name] = instantiate(
+            cfg.uncertainty.compute_uncertainty_measures_for_generations,
+            split_results, split_generations, cfg
+        )
+
+        if cfg.uncertainty.analyze_run:
+            # analyse the uncertainty results
+            ensemble_analysis[name] = instantiate(
+                cfg.uncertainty.analyse_generations,
+                ensemble_entropies[name], cfg
+            )
+
+    return ensemble_generations, ensemble_entropies, ensemble_analysis
+
+
+def s3e_ensemble(cfg):
+    # store intermediate results from each
+    # member of the ensemble
+    ensemble_generations = {}
+    ensemble_entropies = {}
+    ensemble_analysis = {}
+    ensemble = []
+    similarity_measure = Similarity(cfg)
+
+    for name, config in cfg.models.items():
+        model = instantiate(config.model_spec).to(device)
+        tokenizer = instantiate(config.tokenizer_spec)
+        ensemble.append((model, tokenizer))
+
+    generations = instantiate(
+        cfg.uncertainty.collect_generations,
+        config, cfg, ensemble
+    )
+
+    # to compute similarity between generations
+    # at e.g. index 0 and index 1 just simply run
+    similarity = similarity_measure(generations[0], generations[1])
+    print(similarity)
+
+    return ensemble_generations, ensemble_entropies, ensemble_analysis

@@ -1,13 +1,13 @@
 defaults:
   - _self_
   - logger: wandb_disabled
-  - generation: default
-  - uncertainty: default
+  - generation: s3e
+  - uncertainty: s3e
   - analysis: default
   # - override hydra/launcher: submitit_slurm
   # below is a list of models, which will be included
   # in the ensamble; to add/remove a model (un)comment 
-  # - models/gemma_2b@models.gemma
+  - models/gemma_2b@models.gemma
   # - models/gemma_2_2b@models.gemma2
   - models/llama_3_1b@models.llama3
   # to have multiple instances of the same model,
