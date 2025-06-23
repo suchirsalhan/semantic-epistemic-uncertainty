@@ -1,6 +1,4 @@
 from sentence_transformers import SentenceTransformer, SimilarityFunction
-from hydra.utils import get_object
-# distiluse-base-multilingual-cased-v1
 
 
 class Similarity:
@@ -20,3 +18,17 @@ class Similarity:
             normalize_embeddings=True
         )
         return self.sbert.similarity(y_enc, y_prime_enc).mean(dim=0)
+
+    def encode_generated(self, generated):
+        encodings = self.sbert.encode(
+            generated, convert_to_tensor=True,
+            normalize_embeddings=True
+        )
+
+        similarities = self.sbert.similarity(encodings, encodings)
+        return similarities, {y: idx for idx, y in enumerate(generated)}
+        # encoding_map = {}
+        # for idx, y in enumerate(generated):
+        #     encoding_map[y] = encodings[idx, :]
+
+        # return encoding_map

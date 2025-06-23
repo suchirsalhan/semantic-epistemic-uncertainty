@@ -43,22 +43,22 @@ def main(cfg: DictConfig):
         mode=cfg.logger.wandb_mode  # NOTE: disabled by default
     )
 
-    ensemble_generations, ensemble_entropies, ensemble_analysis = instantiate(
+    instantiate(
         cfg.uncertainty.eval_function, cfg
     )
 
     # conditionally save all results
-    if cfg.save_all:
-        with open('all.pickle', 'wb+') as f:
-            pickle.dump(
-                (
-                    ensemble_generations,
-                    ensemble_entropies,
-                    ensemble_analysis
-                ), f
-            )
+    # if cfg.save_all:
+    #     with open('all.pickle', 'wb+') as f:
+    #         pickle.dump(
+    #             (
+    #                 ensemble_generations,
+    #                 ensemble_entropies,
+    #                 ensemble_analysis
+    #             ), f
+    #         )
 
-    pprint(ensemble_analysis)
+    # pprint(ensemble_analysis)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,8 @@
+import random
 from hydra.utils import instantiate
 import torch
-
+import torch.nn.functional as F
+from src.similarity_sensitive_entropy.models import Ensemble
 from src.similarity_sensitive_entropy.similarity_functions import Similarity
 
 device = 'cuda' if torch.cuda.is_available() else \
@@ -60,6 +62,13 @@ def get_prompt(prompt_dataset):
     return ''.join([entry['prompt'] for entry in prompt_dataset])
 
 
+def get_h_s3e(cfg, generations):
+    h_s3e = 0
+    for _ in range(cfg.generation.num_monte_carlo):
+        sample_1 = random.choice(generations)
+        sample_2 = random.choice(generations)
+
+
 def oatml_ensemble(cfg):
     # store intermediate results from each
     # member of the ensemble
@@ -92,27 +101,16 @@ def oatml_ensemble(cfg):
 
 
 def s3e_ensemble(cfg):
-    # store intermediate results from each
-    # member of the ensemble
-    ensemble_generations = {}
-    ensemble_entropies = {}
-    ensemble_analysis = {}
-    ensemble = []
     similarity_measure = Similarity(cfg)
+    ensemble = Ensemble(cfg, similarity_measure, device)
 
-    for name, config in cfg.models.items():
-        model = instantiate(config.model_spec).to(device)
-        tokenizer = instantiate(config.tokenizer_spec)
-        ensemble.append((model, tokenizer))
+    # Batched generation of uncertanties
+    h_s3e = ensemble.get_h_s3e_y_batched()
+    h_s3e_theta = ensemble.get_h_s3e_y_theta_batched()
 
-    generations = instantiate(
-        cfg.uncertainty.collect_generations,
-        config, cfg, ensemble
-    )
+    # There's also a naive implementation (takes very long!)
+    # h_s3e = ensemble.get_h_s3e_y()
+    # h_s3e_theta = ensemble.get_h_s3e_y_theta()
 
-    # to compute similarity between generations
-    # at e.g. index 0 and index 1 just simply run
-    similarity = similarity_measure(generations[0], generations[1])
-    print(similarity)
-
-    return ensemble_generations, ensemble_entropies, ensemble_analysis
+    print(h_s3e, h_s3e_theta)
+    print(h_s3e - h_s3e_theta)
