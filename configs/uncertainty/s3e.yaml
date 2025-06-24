@@ -1,0 +1,14 @@
+entropy_type: "s3e"
+analyze_run: False
+similarity_model: "distiluse-base-multilingual-cased-v1"
+collect_generations:
+  _target_: src.s3e_generations.collect_generations
+compute_uncertainty_measures_for_generations:
+  _target_: src.s3e_generations.compute_uncertainty_measures_for_generations
+analyse_generations:
+  _target_: src.s3e_generations.analyse_generations
+similarity_function:
+  _target_: src.s3e.similarity # TODO: similarity function
+eval_function:
+  _target_: src.utils.s3e_ensemble
+similarity_fn_name: COSINE

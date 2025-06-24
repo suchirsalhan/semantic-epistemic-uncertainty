@@ -1,3 +1,14 @@
+import random
+from hydra.utils import instantiate
+import torch
+import torch.nn.functional as F
+from src.similarity_sensitive_entropy.models import Ensemble
+from src.similarity_sensitive_entropy.similarity_functions import Similarity
+
+device = 'cuda' if torch.cuda.is_available() else \
+    'mps' if torch.mps.is_available() else 'cpu'
+
+
 def get_prompt_formatting_fn(cfg, dataset_cfg):
     def formatting_fn(example):
         prompt = ''
@@ -49,3 +60,57 @@ def format_dataset_to_prompts(dataset, cfg, dataset_cfg):
 
 def get_prompt(prompt_dataset):
     return ''.join([entry['prompt'] for entry in prompt_dataset])
+
+
+def get_h_s3e(cfg, generations):
+    h_s3e = 0
+    for _ in range(cfg.generation.num_monte_carlo):
+        sample_1 = random.choice(generations)
+        sample_2 = random.choice(generations)
+
+
+def oatml_ensemble(cfg):
+    # store intermediate results from each
+    # member of the ensemble
+    ensemble_generations = {}
+    ensemble_entropies = {}
+    ensemble_analysis = {}
+    for name, config in cfg.models.items():
+        # generating raw results from an LLM
+        # split by ['train', 'test'] dataset splits
+        split_results, split_generations = instantiate(
+            cfg.uncertainty.collect_generations, config, cfg
+        )
+        ensemble_generations[name] = (split_generations, split_results)
+
+        # computing semantic entropies for
+        # each member of the ensemble
+        ensemble_entropies[name] = instantiate(
+            cfg.uncertainty.compute_uncertainty_measures_for_generations,
+            split_results, split_generations, cfg
+        )
+
+        if cfg.uncertainty.analyze_run:
+            # analyse the uncertainty results
+            ensemble_analysis[name] = instantiate(
+                cfg.uncertainty.analyse_generations,
+                ensemble_entropies[name], cfg
+            )
+
+    return ensemble_generations, ensemble_entropies, ensemble_analysis
+
+
+def s3e_ensemble(cfg):
+    similarity_measure = Similarity(cfg)
+    ensemble = Ensemble(cfg, similarity_measure, device)
+
+    # Batched generation of uncertanties
+    h_s3e = ensemble.get_h_s3e_y_batched()
+    h_s3e_theta = ensemble.get_h_s3e_y_theta_batched()
+
+    # There's also a naive implementation (takes very long!)
+    # h_s3e = ensemble.get_h_s3e_y()
+    # h_s3e_theta = ensemble.get_h_s3e_y_theta()
+
+    print(h_s3e, h_s3e_theta)
+    print(h_s3e - h_s3e_theta)

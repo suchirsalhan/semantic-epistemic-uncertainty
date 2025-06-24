@@ -8,8 +8,8 @@ import pickle
 import numpy as np
 import wandb
 
-from uncertainty.utils import utils
-from uncertainty.utils.eval_utils import (
+from src.semantic_uncertainty.uncertainty.utils import utils
+from src.semantic_uncertainty.uncertainty.utils.eval_utils import (
     bootstrap, compatible_bootstrap, auroc, accuracy_at_quantile,
     area_under_thresholded_accuracy)
 
@@ -92,12 +92,14 @@ def analyze_run(
 
     # First: Compute simple accuracy metrics for model predictions.
     all_accuracies = dict()
-    all_accuracies['accuracy'] = 1 - np.array(results_old['validation_is_false'])
+    all_accuracies['accuracy'] = 1 - \
+        np.array(results_old['validation_is_false'])
 
     for name, target in all_accuracies.items():
         result_dict['performance'][name] = {}
         result_dict['performance'][name]['mean'] = np.mean(target)
-        result_dict['performance'][name]['bootstrap'] = bootstrap(np.mean, rng)(target)
+        result_dict['performance'][name]['bootstrap'] = bootstrap(
+            np.mean, rng)(target)
 
     rum = results_old['uncertainty_measures']
     if 'p_false' in rum and 'p_false_fixed' not in rum:
@@ -141,13 +143,15 @@ def analyze_run(
                 'mean_uncertainty': [measure_values]}
 
             for answer_fraction in answer_fractions:
-                fargs[f'accuracy_at_{answer_fraction}_answer_fraction'] = [validation_accuracy, measure_values]
+                fargs[f'accuracy_at_{answer_fraction}_answer_fraction'] = [
+                    validation_accuracy, measure_values]
 
             for fname, (function, bs_function) in eval_metrics.items():
                 metric_i = function(*fargs[fname])
                 result_dict['uncertainty'][name][fname] = {}
                 result_dict['uncertainty'][name][fname]['mean'] = metric_i
-                logging.info("%s for measure name `%s`: %f", fname, name, metric_i)
+                logging.info("%s for measure name `%s`: %f",
+                             fname, name, metric_i)
                 result_dict['uncertainty'][name][fname]['bootstrap'] = bs_function(
                     function, rng)(*fargs[fname])
 

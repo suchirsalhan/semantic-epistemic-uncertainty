@@ -1,2 +1,4 @@
 base/
 __pycache__/
+outputs/
+all.pickle

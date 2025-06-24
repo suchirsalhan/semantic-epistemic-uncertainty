@@ -3,6 +3,8 @@ version: 1.0
 size: "2B"
 model_name: "google/gemma-2b"
 model_it_name: "google/gemma-2b-it"
+model_max_new_tokens: 100
+
 
 model_spec:
   _target_: transformers.AutoModelForCausalLM.from_pretrained

@@ -15,12 +15,13 @@ from transformers import StoppingCriteriaList
 from huggingface_hub import snapshot_download
 
 
-from uncertainty.models.base_model import BaseModel
-from uncertainty.models.base_model import STOP_SEQUENCES
+from src.semantic_uncertainty.uncertainty.models.base_model import BaseModel
+from src.semantic_uncertainty.uncertainty.models.base_model import STOP_SEQUENCES
 
 
 class StoppingCriteriaSub(StoppingCriteria):
     """Stop generations when they match a particular text or token."""
+
     def __init__(self, stops, tokenizer, match_on='text', initial_length=None):
         super().__init__()
         self.stops = stops
@@ -28,14 +29,17 @@ class StoppingCriteriaSub(StoppingCriteria):
         self.tokenizer = tokenizer
         self.match_on = match_on
         if self.match_on == 'tokens':
-            self.stops = [torch.tensor(self.tokenizer.encode(i)).to('cuda') for i in self.stops]
+            self.stops = [torch.tensor(self.tokenizer.encode(i)).to(
+                'cuda') for i in self.stops]
             print(self.stops)
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor):
-        del scores  # `scores` arg is required by StoppingCriteria but unused by us.
+        # `scores` arg is required by StoppingCriteria but unused by us.
+        del scores
         for stop in self.stops:
             if self.match_on == 'text':
-                generation = self.tokenizer.decode(input_ids[0][self.initial_length:], skip_special_tokens=False)
+                generation = self.tokenizer.decode(
+                    input_ids[0][self.initial_length:], skip_special_tokens=False)
                 match = stop in generation
             elif self.match_on == 'tokens':
                 # Can be dangerous due to tokenizer ambiguities.
@@ -111,15 +115,15 @@ class HuggingfaceModel(BaseModel):
                 base = 'huggyllama'
 
             self.tokenizer = AutoTokenizer.from_pretrained(
-                f"{base}/{model_name}", device_map="auto",
+                f"{model_name}", device_map="auto",
                 token_type_ids=None)
 
             llama65b = '65b' in model_name and base == 'huggyllama'
             llama2_70b = '70b' in model_name and base == 'meta-llama'
 
-            if ('7b' in model_name or '13b' in model_name) or eightbit:
+            if ('1B' in model_name or '7b' in model_name or '13b' in model_name) or eightbit:
                 self.model = AutoModelForCausalLM.from_pretrained(
-                    f"{base}/{model_name}", device_map="auto",
+                    f"{model_name}", device_map="auto",
                     max_memory={0: '80GIB'}, **kwargs,)
 
             elif llama2_70b or llama65b:
@@ -140,7 +144,8 @@ class HuggingfaceModel(BaseModel):
                     dtype='float16'
                 )
                 device_map = remove_split_layer(device_map)
-                full_model_device_map = {f"model.{k}": v for k, v in device_map.items()}
+                full_model_device_map = {
+                    f"model.{k}": v for k, v in device_map.items()}
                 full_model_device_map["lm_head"] = 0
 
                 self.model = accelerate.load_checkpoint_and_dispatch(
@@ -199,7 +204,7 @@ class HuggingfaceModel(BaseModel):
     def predict(self, input_data, temperature, return_full=False):
 
         # Implement prediction.
-        inputs = self.tokenizer(input_data, return_tensors="pt").to("cuda")
+        inputs = self.tokenizer(input_data, return_tensors="pt").to("mps")
 
         if 'llama' in self.model_name.lower() or 'falcon' in self.model_name or 'mistral' in self.model_name.lower():
             if 'token_type_ids' in inputs:  # Some HF models have changed.
@@ -242,13 +247,13 @@ class HuggingfaceModel(BaseModel):
             return full_answer
 
         # For some models, we need to remove the input_data from the answer.
-        if full_answer.startswith(input_data):
-            input_data_offset = len(input_data)
+        if full_answer.replace(' ', '').startswith(input_data.replace(' ', '')):
+            input_data_offset = len(input_data.replace(' ', ''))
         else:
             raise ValueError('Have not tested this in a while.')
 
         # Remove input from answer.
-        answer = full_answer[input_data_offset:]
+        answer = full_answer.replace(' ', '')[input_data_offset:]
 
         # Remove stop_words from answer.
         stop_at = len(answer)
@@ -276,12 +281,14 @@ class HuggingfaceModel(BaseModel):
         # Note: It's important we do this with full answer, since there might be
         # non-trivial interactions between the input_data and generated part
         # in tokenization (particularly around whitespaces.)
-        token_stop_index = self.tokenizer(full_answer[:input_data_offset + stop_at], return_tensors="pt")['input_ids'].shape[1]
+        token_stop_index = self.tokenizer(
+            full_answer.replace(' ', '')[:input_data_offset + stop_at], return_tensors="pt")['input_ids'].shape[1]
         n_input_token = len(inputs['input_ids'][0])
         n_generated = token_stop_index - n_input_token
 
         if n_generated == 0:
-            logging.warning('Only stop_words were generated. For likelihoods and embeddings, taking stop word instead.')
+            logging.warning(
+                'Only stop_words were generated. For likelihoods and embeddings, taking stop word instead.')
             n_generated = 1
 
         # Get the last hidden state (last layer) and the last token's embedding of the answer.
@@ -311,7 +318,7 @@ class HuggingfaceModel(BaseModel):
                 n_generated, n_input_token, token_stop_index,
                 self.tokenizer.decode(outputs['sequences'][0][-1]),
                 full_answer,
-                )
+            )
             last_input = hidden[0]
         elif ((n_generated - 1) >= len(hidden)):
             # If access idx is larger/equal.
@@ -322,7 +329,7 @@ class HuggingfaceModel(BaseModel):
                 n_generated, n_input_token, token_stop_index,
                 self.tokenizer.decode(outputs['sequences'][0][-1]),
                 full_answer, sliced_answer
-                )
+            )
             last_input = hidden[-1]
         else:
             last_input = hidden[n_generated - 1]
@@ -343,7 +350,8 @@ class HuggingfaceModel(BaseModel):
 
         log_likelihoods = [score.item() for score in transition_scores[0]]
         if len(log_likelihoods) == 1:
-            logging.warning('Taking first and only generation for log likelihood!')
+            logging.warning(
+                'Taking first and only generation for log likelihood!')
             log_likelihoods = log_likelihoods
         else:
             log_likelihoods = log_likelihoods[:n_generated]
@@ -360,7 +368,8 @@ class HuggingfaceModel(BaseModel):
         """Get the probability of the model anwering A (True) for the given input."""
 
         input_data += ' A'
-        tokenized_prompt_true = self.tokenizer(input_data, return_tensors='pt').to('cuda')['input_ids']
+        tokenized_prompt_true = self.tokenizer(
+            input_data, return_tensors='pt').to('cuda')['input_ids']
         # The computation of the negative log likelihoods follows:
         # https://huggingface.co/docs/transformers/perplexity.
 
@@ -369,7 +378,8 @@ class HuggingfaceModel(BaseModel):
         target_ids_true[0, :-1] = -100
 
         with torch.no_grad():
-            model_output_true = self.model(tokenized_prompt_true, labels=target_ids_true)
+            model_output_true = self.model(
+                tokenized_prompt_true, labels=target_ids_true)
 
         loss_true = model_output_true.loss
 

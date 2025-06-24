@@ -1,17 +1,17 @@
 from collections import defaultdict
+import pickle
 import wandb
 import torch
 import hydra
 import random
 import numpy as np
-from trl import setup_chat_format
 from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed
 from hydra.utils import instantiate
 from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 import logging
-
-from src.generations import analyse_generations, collect_generations
+from pprint import pprint
+from src.oatml_generations import analyse_generations, compute_uncertainty_measures_for_generations, collect_generations
 
 
 @hydra.main(
@@ -43,17 +43,22 @@ def main(cfg: DictConfig):
         mode=cfg.logger.wandb_mode  # NOTE: disabled by default
     )
 
-    ensemble = []
-    # instantiate all selected models and
-    # their tokenizers for the ensemble
-    for name, config in cfg.models.items():
-        model = instantiate(config.model_spec)
-        tokenizer = instantiate(config.tokenizer_spec)
-        ensemble.append((model, tokenizer))
+    instantiate(
+        cfg.uncertainty.eval_function, cfg
+    )
 
-    dataset = instantiate(cfg.dataset.spec)
-    generations = collect_generations(ensemble, dataset, cfg)
-    individual_entropies = analyse_generations(generations)
+    # conditionally save all results
+    # if cfg.save_all:
+    #     with open('all.pickle', 'wb+') as f:
+    #         pickle.dump(
+    #             (
+    #                 ensemble_generations,
+    #                 ensemble_entropies,
+    #                 ensemble_analysis
+    #             ), f
+    #         )
+
+    # pprint(ensemble_analysis)
 
 
 if __name__ == '__main__':

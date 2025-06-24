@@ -1,0 +1,17 @@
+num_few_shot: 3
+num_samples: 1
+brief_response: True
+brief_prompt: "default"
+use_context: True
+append_answer: True
+prompt_type: "default"
+answerable_only: True
+compute_p_true: False
+get_training_set_generations: True
+get_training_set_generations_most_likely_only: False
+p_true_num_fewshot: 5
+temperature: 0.8
+compute_accuracy_at_all_temps: True
+num_generations: 10
+metric: "llm"
+seed: ${seed}

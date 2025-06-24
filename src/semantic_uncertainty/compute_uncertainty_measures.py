@@ -7,21 +7,21 @@ import numpy as np
 import wandb
 
 from analyze_results import analyze_run
-from uncertainty.data.data_utils import load_ds
-from uncertainty.uncertainty_measures.p_ik import get_p_ik
-from uncertainty.uncertainty_measures.semantic_entropy import get_semantic_ids
-from uncertainty.uncertainty_measures.semantic_entropy import logsumexp_by_id
-from uncertainty.uncertainty_measures.semantic_entropy import predictive_entropy
-from uncertainty.uncertainty_measures.semantic_entropy import predictive_entropy_rao
-from uncertainty.uncertainty_measures.semantic_entropy import cluster_assignment_entropy
-from uncertainty.uncertainty_measures.semantic_entropy import context_entails_response
-from uncertainty.uncertainty_measures.semantic_entropy import EntailmentDeberta
-from uncertainty.uncertainty_measures.semantic_entropy import EntailmentGPT4
-from uncertainty.uncertainty_measures.semantic_entropy import EntailmentGPT35
-from uncertainty.uncertainty_measures.semantic_entropy import EntailmentGPT4Turbo
-from uncertainty.uncertainty_measures.semantic_entropy import EntailmentLlama
-from uncertainty.uncertainty_measures import p_true as p_true_utils
-from uncertainty.utils import utils
+from src.semantic_uncertainty.uncertainty.data.data_utils import load_ds
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.p_ik import get_p_ik
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import get_semantic_ids
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import logsumexp_by_id
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import predictive_entropy
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import predictive_entropy_rao
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import cluster_assignment_entropy
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import context_entails_response
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import EntailmentDeberta
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import EntailmentGPT4
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import EntailmentGPT35
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import EntailmentGPT4Turbo
+from src.semantic_uncertainty.uncertainty.uncertainty_measures.semantic_entropy import EntailmentLlama
+from src.semantic_uncertainty.uncertainty.uncertainty_measures import p_true as p_true_utils
+from src.semantic_uncertainty.uncertainty.utils import utils
 
 
 utils.setup_logger()
@@ -42,7 +42,8 @@ def main(args):
     if args.assign_new_wandb_id:
         logging.info('Assign new wandb_id.')
         api = wandb.Api()
-        old_run = api.run(f'{args.restore_entity_eval}/{project}/{args.eval_wandb_runid}')
+        old_run = api.run(
+            f'{args.restore_entity_eval}/{project}/{args.eval_wandb_runid}')
         wandb.init(
             entity=args.entity,
             project=project,
@@ -78,7 +79,8 @@ def main(args):
 
         is_ood_eval = True  # pylint: disable=invalid-name
         api = wandb.Api()
-        old_run_train = api.run(f'{args.restore_entity_train}/semantic_uncertainty/{args.train_wandb_runid}')
+        old_run_train = api.run(
+            f'{args.restore_entity_train}/semantic_uncertainty/{args.train_wandb_runid}')
         filename = 'train_generations.pkl'
         old_run_train.file(filename).download(
             replace=True, exist_ok=False, root=wandb.run.dir)
@@ -101,13 +103,17 @@ def main(args):
         if args.entailment_model == 'deberta':
             entailment_model = EntailmentDeberta()
         elif args.entailment_model == 'gpt-4':
-            entailment_model = EntailmentGPT4(args.entailment_cache_id, args.entailment_cache_only)
+            entailment_model = EntailmentGPT4(
+                args.entailment_cache_id, args.entailment_cache_only)
         elif args.entailment_model == 'gpt-3.5':
-            entailment_model = EntailmentGPT35(args.entailment_cache_id, args.entailment_cache_only)
+            entailment_model = EntailmentGPT35(
+                args.entailment_cache_id, args.entailment_cache_only)
         elif args.entailment_model == 'gpt-4-turbo':
-            entailment_model = EntailmentGPT4Turbo(args.entailment_cache_id, args.entailment_cache_only)
+            entailment_model = EntailmentGPT4Turbo(
+                args.entailment_cache_id, args.entailment_cache_only)
         elif 'llama' in args.entailment_model.lower():
-            entailment_model = EntailmentLlama(args.entailment_cache_id, args.entailment_cache_only, args.entailment_model)
+            entailment_model = EntailmentLlama(
+                args.entailment_cache_id, args.entailment_cache_only, args.entailment_model)
         else:
             raise ValueError
         logging.info('Entailment model loading complete.')
@@ -158,7 +164,8 @@ def main(args):
 
     if args.recompute_accuracy:
         # This is usually not enabled.
-        logging.warning('Recompute accuracy enabled. This does not apply to precomputed p_true!')
+        logging.warning(
+            'Recompute accuracy enabled. This does not apply to precomputed p_true!')
         metric = utils.get_metric(args.metric)
 
     # Restore outputs from `generate_answrs.py` run.
@@ -191,7 +198,8 @@ def main(args):
         if not args.use_all_generations:
             if args.use_num_generations == -1:
                 raise ValueError
-            responses = [fr[0] for fr in full_responses[:args.use_num_generations]]
+            responses = [fr[0]
+                         for fr in full_responses[:args.use_num_generations]]
         else:
             responses = [fr[0] for fr in full_responses]
 
@@ -214,7 +222,8 @@ def main(args):
         if args.compute_predictive_entropy:
             # Token log likelihoods. Shape = (n_sample, n_tokens)
             if not args.use_all_generations:
-                log_liks = [r[1] for r in full_responses[:args.use_num_generations]]
+                log_liks = [r[1]
+                            for r in full_responses[:args.use_num_generations]]
             else:
                 log_liks = [r[1] for r in full_responses]
 
@@ -237,22 +246,26 @@ def main(args):
             result_dict['semantic_ids'].append(semantic_ids)
 
             # Compute entropy from frequencies of cluster assignments.
-            entropies['cluster_assignment_entropy'].append(cluster_assignment_entropy(semantic_ids))
+            entropies['cluster_assignment_entropy'].append(
+                cluster_assignment_entropy(semantic_ids))
 
             # Length normalization of generation probabilities.
             log_liks_agg = [np.mean(log_lik) for log_lik in log_liks]
 
             # Compute naive entropy.
-            entropies['regular_entropy'].append(predictive_entropy(log_liks_agg))
+            entropies['regular_entropy'].append(
+                predictive_entropy(log_liks_agg))
 
             # Compute semantic entropy.
-            log_likelihood_per_semantic_id = logsumexp_by_id(semantic_ids, log_liks_agg, agg='sum_normalized')
+            log_likelihood_per_semantic_id = logsumexp_by_id(
+                semantic_ids, log_liks_agg, agg='sum_normalized')
             pe = predictive_entropy_rao(log_likelihood_per_semantic_id)
             entropies['semantic_entropy'].append(pe)
 
             # pylint: disable=invalid-name
             log_str = 'semantic_ids: %s, avg_token_log_likelihoods: %s, entropies: %s'
-            entropies_fmt = ', '.join([f'{i}:{j[-1]:.2f}' for i, j in entropies.items()])
+            entropies_fmt = ', '.join(
+                [f'{i}:{j[-1]:.2f}' for i, j in entropies.items()])
             # pylint: enable=invalid-name
             logging.info(80*'#')
             logging.info('NEW ITEM %d at id=`%s`.', idx, tid)
@@ -290,7 +303,8 @@ def main(args):
 
     validation_unanswerable = [1.0 - is_a for is_a in validation_answerable]
     result_dict['validation_unanswerable'] = validation_unanswerable
-    logging.info('Unanswerable prop on validation: %f', np.mean(validation_unanswerable))
+    logging.info('Unanswerable prop on validation: %f',
+                 np.mean(validation_unanswerable))
 
     if 'uncertainty_measures' not in result_dict:
         result_dict['uncertainty_measures'] = dict()
@@ -307,8 +321,10 @@ def main(args):
             train_is_true.append(most_likely_answer['accuracy'])
             train_answerable.append(is_answerable(train_generations[tid]))
         train_is_false = [0.0 if is_t else 1.0 for is_t in train_is_true]
-        train_unanswerable = [0.0 if is_t else 1.0 for is_t in train_answerable]
-        logging.info('Unanswerable prop on p_ik training: %f', np.mean(train_unanswerable))
+        train_unanswerable = [
+            0.0 if is_t else 1.0 for is_t in train_answerable]
+        logging.info('Unanswerable prop on p_ik training: %f',
+                     np.mean(train_unanswerable))
 
     if args.compute_p_ik:
         logging.info('Starting training p_ik on train embeddings.')
@@ -327,8 +343,10 @@ def main(args):
         result_dict['uncertainty_measures']['p_ik_unanswerable'] = p_ik_predictions
 
     if args.compute_p_true_in_compute_stage:
-        result_dict['uncertainty_measures']['p_false'] = [1 - p for p in p_trues]
-        result_dict['uncertainty_measures']['p_false_fixed'] = [1 - np.exp(p) for p in p_trues]
+        result_dict['uncertainty_measures']['p_false'] = [
+            1 - p for p in p_trues]
+        result_dict['uncertainty_measures']['p_false_fixed'] = [
+            1 - np.exp(p) for p in p_trues]
 
     utils.save(result_dict, 'uncertainty_measures.pkl')
 
