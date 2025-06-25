@@ -3,7 +3,6 @@ defaults:
   - logger: wandb_disabled
   - generation: s3e
   - uncertainty: s3e
-  - analysis: default
   # - override hydra/launcher: submitit_slurm
   # below is a list of models, which will be included
   # in the ensamble; to add/remove a model (un)comment 
