@@ -12,11 +12,6 @@ class Ensemble:
         self.device = device
         self.similarity_measure = similarity_measure
         self.ensemble = []
-        # store intermediate results from each
-        # member of the ensemble
-        self.ensemble_generations = {}
-        self.ensemble_entropies = {}
-        self.ensemble_analysis = {}
 
         for name, config in cfg.models.items():
             model = instantiate(config.model_spec).to(device)
@@ -39,37 +34,80 @@ class Ensemble:
         )
         return tokenizer.batch_decode(y, skip_special_tokens=True)[0]
 
-    def get_h_s3e_y_naive(self, prompt='What\'s the weather like tomorrow?'):
-        """Naive sequential implementation of H_S3E(Y)"""
-        s_outer = 0
-        for _ in range(self.cfg.generation.num_monte_carlo):
-            y = self(prompt)
-            s_inner = 0
-            for _ in range(self.cfg.generation.num_monte_carlo):
-                y_prime = self(prompt)
-                # computing similarity of y and y'
-                s_inner += self.similarity_measure(y, y_prime)
-            s_inner /= self.cfg.generation.num_monte_carlo
-            s_inner = torch.log(s_inner)
-            s_outer += s_inner
-        s_outer /= self.cfg.generation.num_monte_carlo
-        s_outer *= -1
-        return s_outer
+    def sample(self, entry, num_repeats: int, prompt: str):
+        """
+            Generating a single sample from p(y | theta) distribution
+        """
+
+        model, tokenizer = entry
+        # ^
+        # theta
+
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        generated = []
+
+        with torch.no_grad():
+            # batching the generation process
+            # because the naive and batched implementations
+            # scale the number of genrations as O(n^2) and O(n^3)
+            # for computing the uncertainties, where n is the
+            # number of monte carlo samples
+            # so e.g. if n=30, n^3=2700 which cannot
+            # easily fit into a GPU memory
+            for idx in tqdm(range(0, num_repeats, self.cfg.generation.batch_size)):
+                num_samples = min(
+                    self.cfg.generation.batch_size,
+                    num_repeats - idx
+                )
+                model_inputs = tokenizer(
+                    [prompt] * num_samples,
+                    return_tensors="pt",
+                    padding=True
+                ).to(self.device)
+                generated_ids = model.generate(
+                    **model_inputs, do_sample=True, num_beams=1
+                )
+                batch = tokenizer.batch_decode(
+                    generated_ids, skip_special_tokens=True
+                )
+                generated.extend(batch)
+
+        return generated
 
     def get_h_s3e_y_batched(self, prompt='What\'s the weather like tomorrow?'):
-        """Batched generation sequential implementation of H_S3E(Y)"""
+        """
+        Batched generation sequential implementation of H_S3E(Y)
+
+        H_{S3E}(Y) =−E_{y~p(y)} log E_{y'~p(y)} S(y,y') 
+                     ^              ^           ^
+                outer model    inner model   similarity function
+        """
+
+        # outer models are used to estimate
+        # the expected value E_{y~p(y)}
+        # i.e. to sample y
         outer_models = choices(
             self.ensemble, k=self.cfg.generation.num_monte_carlo
         )
+
+        # inner models are used to estimate
+        # the expected value E_{y'~p(y)}
+        # i.e. to sample y' (y_prime)
         inner_models = choices(
             self.ensemble, k=self.cfg.generation.num_monte_carlo ** 2
         )
         model_generations = {}
+        # storing all generations to be able
+        # to precompute similarity metrics
         all_generations = []
 
         # first count how many times a model is chosen
-        # from the ensemble to generate an output
-        # next batch generate outputs
+        # from the ensemble to generate either y or y' (y_prime)
+        # i.e. how many times the model is used to estimate
+        # either E_{y~p(y)} or E_{y'~p(y)}
+        # Next batch generate outputs
         for model in tqdm(set(outer_models) | set(inner_models)):
             count = outer_models.count(
                 model
@@ -83,26 +121,47 @@ class Ensemble:
                 model, count, prompt
             )
             all_generations.extend(model_generations[model])
+            # iterable object will allow us to 'take'
+            # a model generation without having to account
+            # for any already used generations
             model_generations[model] = iter(model_generations[model])
 
+        # precomputing similarities between all possible y and y' (y_prime) values
         similarity_matrix, indices = self.similarity_measure.encode_generated(
             all_generations
         )
 
+        # same as for model_generations, an iterable
+        # object will allow us to select a model
+        # for sampling y~p(y) and y'~p(y) (y_prime)
+        # without having to manually account for
+        # the order of the selections
         outer_models = iter(outer_models)
         inner_models = iter(inner_models)
 
+        # accumulator for estimating E_{y~p(y)}
         s_outer = 0
+
+        # estimate expectation over num_monte_carlo samples
         for _ in range(self.cfg.generation.num_monte_carlo):
+            # selecting a model for sampling y~p(y)
             outer_model = next(outer_models)
+            # selecting a pre-generated sample y~p(y)
             y = next(model_generations[outer_model])
+            # finding the row number/column number of y in similarity_matrix
             y_idx = indices[y]
+            # accumulator for estimating E_{y'~p(y)} (y_prime)
             s_inner = 0
+            # estimate expectation over num_monte_carlo samples
             for _ in range(self.cfg.generation.num_monte_carlo):
+                # selecting a model for sampling y'~p(y) (y_prime)
                 inner_model = next(inner_models)
+                # selecting a pre-generated sample y'~p(y) (y_prime)
                 y_prime = next(model_generations[inner_model])
+                # finding the row number/column number
+                # of y' (y_prime) in similarity_matrix
                 y_prime_idx = indices[y_prime]
-                # computing similarity of y and y'
+                # adding a precomputed similarity of y and y' (y_prime)
                 s_inner += similarity_matrix[y_idx, y_prime_idx]
             s_inner /= self.cfg.generation.num_monte_carlo
             s_inner = torch.log(s_inner)
@@ -111,33 +170,23 @@ class Ensemble:
         s_outer *= -1
         return s_outer
 
-    def get_h_s3e_y_theta_naive(self, prompt='What\'s the weather like tomorrow?'):
-        """Naive sequential implementation of H_S3E(Y|\Theta)"""
-        s = 0
-        for _ in range(self.cfg.generation.num_monte_carlo):
-            ensemble_entry = choice(self.ensemble)
-            s_outer = 0
-            for _ in range(self.cfg.generation.num_monte_carlo):
-                y = self(prompt, ensemble_entry)
-                s_inner = 0
-                for _ in range(self.cfg.generation.num_monte_carlo):
-                    y_prime = self(prompt, ensemble_entry)
-                    s_inner += self.similarity_measure(y, y_prime)
-                s_inner /= self.cfg.generation.num_monte_carlo
-                s_inner = torch.log(s_inner)
-                s_outer += s_inner
-            s_outer /= self.cfg.generation.num_monte_carlo
-            s += s_outer
-        s /= self.cfg.generation.num_monte_carlo
-        s *= -1
-        return s
-
     def get_h_s3e_y_theta_batched(self, prompt='What\'s the weather like tomorrow?'):
-        """Batched generation sequential implementation of H_S3E(Y|\Theta)"""
+        """
+        Batched generation sequential implementation of H_S3E(Y|\Theta)
+
+        H_{S3E}(Y|\Theta) =−E{theta~\Theta} E{y~p(y|theta)} log E{y'~p(y|theta)} S(y,y')
+                             ^
+                     candidate_models
+        """
+        # candidate_models are used in computing
+        # the leftmost expectation in H_{S3E}(Y|\Theta)
         candidate_models = choices(
             self.ensemble, k=self.cfg.generation.num_monte_carlo
         )
+
         model_generations = {}
+        # storing all generations to be able
+        # to precompute similarity metrics
         all_generations = []
 
         # first count how many times a model is chosen
@@ -145,6 +194,15 @@ class Ensemble:
         # next batch generate outputs
         for model in tqdm(set(candidate_models)):
             count = candidate_models.count(model)
+            # for a model theta, we need to generate
+            # m * (n^2 + n)
+            # where m is how many times it is selected
+            #   to be in candidate_models, i.e. how many
+            #   this particular model is used in estimating
+            #   E{theta~\Theta}
+            # where n is the number of monte carlo samples
+            #   used to estimate the other two expectations
+            #   i.e. E{y~p(y|theta)} and E{y'~p(y|theta)}
             model_generations[model] = self.sample(
                 # args:
                 # model: (model, tokenizer) tuple
@@ -158,24 +216,44 @@ class Ensemble:
                 prompt
             )
             all_generations.extend(model_generations[model])
+            # iterable object will allow us to 'take'
+            # a model generation without having to account
+            # for any already used generations
             model_generations[model] = iter(model_generations[model])
 
+        # same as for model_generations, an iterable
+        # object will allow us to select a model
+        # for sampling theta~\Theta
+        # without having to manually account for
+        # the order of the selections
         candidate_models = iter(candidate_models)
+        # precomputing similarities between all possible y and y' (y_prime) values
         similarity_matrix, indices = self.similarity_measure.encode_generated(
             all_generations
         )
 
+        # accumulator for estimating E_{theta~\Theta}
         s = 0
+        # estimate expectation over num_monte_carlo samples
         for _ in range(self.cfg.generation.num_monte_carlo):
+            # select theta~\Theta
             model = next(candidate_models)
+            # accumulator for estimating E_{y~p(y|theta)}
             s_outer = 0
             for _ in range(self.cfg.generation.num_monte_carlo):
+                # select precomputed y~p(y | theta)
                 y = next(model_generations[model])
+                # finding the row number/column number
+                # of y in similarity_matrix
                 y_idx = indices[y]
+                # accumulator for estimating E_{y~p(y'|theta)} (y_prime)
                 s_inner = 0
                 for _ in range(self.cfg.generation.num_monte_carlo):
                     y_prime = next(model_generations[model])
+                    # finding the row number/column number
+                    # of y' (y_prime) in similarity_matrix
                     y_prime_idx = indices[y_prime]
+                    # adding a precomputed similarity of y and y' (y_prime)
                     s_inner += similarity_matrix[y_idx, y_prime_idx]
                 s_inner /= self.cfg.generation.num_monte_carlo
                 s_inner = torch.log(s_inner)
@@ -187,7 +265,18 @@ class Ensemble:
         return s.item()
 
     def p_y_given_theta(self, y, theta, tokenizer):
+        """
+            Function for estimating the probability P(y | theta)
+        """
+        # tokenize the input
         tokenized_y = tokenizer(y, return_tensors='pt').to(self.device)
+        # compute model logits for each sequence of tokens
+        # [
+        #   P(y_0 | prompt), P(y_1 | prompt, y_0),
+        #   ...,
+        #   P(y_n | prompt, y_0, y_1, ..., y_{n-1})
+        # ]
+        # given the actual sequence tokens as labels
         logits = theta(**tokenized_y, labels=tokenized_y['input_ids']).logits
 
         # code based on https://github.com/huggingface/transformers/blob/f1d822ba337499d429f832855622b97d90ac1406/src/transformers/models/llama/modeling_llama.py#L1205-L1210
@@ -294,31 +383,40 @@ class Ensemble:
         samples = list(map(self.sample, mc_y_samples))
         return samples
 
-    def sample(self, entry, num_repeats: int, prompt: str):
-        model, tokenizer = entry
+    def get_h_s3e_y_naive(self, prompt='What\'s the weather like tomorrow?'):
+        """Naive sequential implementation of H_S3E(Y)"""
+        s_outer = 0
+        for _ in range(self.cfg.generation.num_monte_carlo):
+            y = self(prompt)
+            s_inner = 0
+            for _ in range(self.cfg.generation.num_monte_carlo):
+                y_prime = self(prompt)
+                # computing similarity of y and y'
+                s_inner += self.similarity_measure(y, y_prime)
+            s_inner /= self.cfg.generation.num_monte_carlo
+            s_inner = torch.log(s_inner)
+            s_outer += s_inner
+        s_outer /= self.cfg.generation.num_monte_carlo
+        s_outer *= -1
+        return s_outer
 
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        generated = []
-
-        with torch.no_grad():
-            for idx in tqdm(range(0, num_repeats, self.cfg.generation.batch_size)):
-                num_samples = min(
-                    self.cfg.generation.batch_size,
-                    num_repeats - idx
-                )
-                model_inputs = tokenizer(
-                    [prompt] * num_samples,
-                    return_tensors="pt",
-                    padding=True
-                ).to(self.device)
-                generated_ids = model.generate(
-                    **model_inputs, do_sample=True, num_beams=1
-                )
-                batch = tokenizer.batch_decode(
-                    generated_ids, skip_special_tokens=True
-                )
-                generated.extend(batch)
-
-        return generated
+    def get_h_s3e_y_theta_naive(self, prompt='What\'s the weather like tomorrow?'):
+        """Naive sequential implementation of H_S3E(Y|\Theta)"""
+        s = 0
+        for _ in range(self.cfg.generation.num_monte_carlo):
+            ensemble_entry = choice(self.ensemble)
+            s_outer = 0
+            for _ in range(self.cfg.generation.num_monte_carlo):
+                y = self(prompt, ensemble_entry)
+                s_inner = 0
+                for _ in range(self.cfg.generation.num_monte_carlo):
+                    y_prime = self(prompt, ensemble_entry)
+                    s_inner += self.similarity_measure(y, y_prime)
+                s_inner /= self.cfg.generation.num_monte_carlo
+                s_inner = torch.log(s_inner)
+                s_outer += s_inner
+            s_outer /= self.cfg.generation.num_monte_carlo
+            s += s_outer
+        s /= self.cfg.generation.num_monte_carlo
+        s *= -1
+        return s

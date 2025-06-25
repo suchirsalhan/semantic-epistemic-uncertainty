@@ -10,8 +10,6 @@ from hydra.utils import instantiate
 from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 import logging
-from pprint import pprint
-from src.oatml_generations import analyse_generations, compute_uncertainty_measures_for_generations, collect_generations
 
 
 @hydra.main(
@@ -46,19 +44,6 @@ def main(cfg: DictConfig):
     instantiate(
         cfg.uncertainty.eval_function, cfg
     )
-
-    # conditionally save all results
-    # if cfg.save_all:
-    #     with open('all.pickle', 'wb+') as f:
-    #         pickle.dump(
-    #             (
-    #                 ensemble_generations,
-    #                 ensemble_entropies,
-    #                 ensemble_analysis
-    #             ), f
-    #         )
-
-    # pprint(ensemble_analysis)
 
 
 if __name__ == '__main__':
