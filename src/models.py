@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import random
 import torch
+from pprint import pprint
 
 
 class Ensemble:
@@ -256,6 +257,7 @@ class Ensemble:
                     # adding a precomputed similarity of y and y' (y_prime)
                     s_inner += similarity_matrix[y_idx, y_prime_idx]
                 s_inner /= self.cfg.generation.num_monte_carlo
+                # print(s_inner)
                 s_inner = torch.log(s_inner)
                 s_outer += s_inner
             s_outer /= self.cfg.generation.num_monte_carlo
@@ -280,6 +282,7 @@ class Ensemble:
         logits = theta(**tokenized_y, labels=tokenized_y['input_ids']).logits
 
         # code based on https://github.com/huggingface/transformers/blob/f1d822ba337499d429f832855622b97d90ac1406/src/transformers/models/llama/modeling_llama.py#L1205-L1210
+        # TODO: need help here
         shift_logits = F.log_softmax(
             logits[..., :-1, :].contiguous().squeeze(0), dim=1
         )
@@ -289,6 +292,8 @@ class Ensemble:
             probability += shift_logits[idx, label]
         return probability.item()
 
+    # P(y) ? E_{theta ~ \Theta} P(y | theta)
+
     def batch_compute_entropies(self, prompt='What\'s the weather like tomorrow?'):
         """
             Function for generating a batch of samples from 
@@ -296,92 +301,106 @@ class Ensemble:
             h_s3e_y and h_s3e_y_theta from the generations
         """
 
-        # generating more samples than needed to reduce the risk
-        # of using the same sample too many times
-        # (TODO: maths to estimate a good number of generations)
+        mc_y_samples = []
 
+        # choose models to generate y-s from
         mc_y_ensemble_candidates = choices(
             self.ensemble, k=self.cfg.generation.num_monte_carlo
         )
-        mc_y_samples = []
+
+        # generate as many y-s per ensemble model
+        # as many times it has been chosen for the
+        # mc_y_ensemble_candidates list
         for entry in set(mc_y_ensemble_candidates):
             mc_y_samples.extend(
                 self.sample(
-                    entry, mc_y_ensemble_candidates.count(entry)
+                    entry,
+                    mc_y_ensemble_candidates.count(entry),
+                    prompt
                 )
             )
 
+        # shuffle because otherwise the y samples would
+        # be generated in order of the models occuring
+        # in set(mc_y_ensemble_candidates)
         random.Random(self.cfg.seed).shuffle(mc_y_samples)
 
-        # computing h_s3e_y
-        # TODO: vectorise
-        s_outer = 0
-        for _ in range(self.cfg.generation.num_monte_carlo):
-            y = choice(mc_y_samples)
-            s_inner = 0
-            for _ in range(self.cfg.generation.num_monte_carlo):
-                y_prime = choice(mc_y_samples)
-                # computing similarity of y and y'
-                s_inner += self.similarity_measure(y, y_prime)
-            s_inner /= self.cfg.generation.num_monte_carlo
-            s_inner = torch.log(s_inner)
-            s_outer += s_inner
-        s_outer /= self.cfg.generation.num_monte_carlo
-        s_outer *= -1
-        h_s3e_y = s_outer.item()
+        similarity_matrix_raw, indices = self.similarity_measure.encode_generated(
+            mc_y_samples
+        )
 
-        # computing h_s3e_y_theta
-        # TODO: vectorise
-        for entry in self.ensemble:
-            model, tokenizer = entry
-            denominator_models = choices(self.ensemble)
-            Z_numerator = torch.tensor(
-                list(
-                    map(
-                        lambda x: self.p_y_given_theta(
-                            x, model, tokenizer
-                        ), mc_y_samples
-                    )
+        h_s3e = similarity_matrix_raw.mean(dim=0).log().mean() * -1
+
+        # set S(y,y) to zero -- will implicity be skipping
+        # the summation over indices i=j
+        similarity_matrix = similarity_matrix_raw.fill_diagonal_(0.0).cpu()
+
+        p_ensemble = {}
+        p_model = {
+            model: {}
+            for model in set(mc_y_ensemble_candidates)
+        }
+
+        # precompute p(y) and p(y | theta)
+        # since y-s can occur multiple times in
+        # mc_y_samples, no need to recompute its
+        # probabilities -- therefore iterating
+        # over set(mc_y_samples) instead of
+        # mc_y_samples is fine
+        for y in tqdm(
+            set(mc_y_samples),
+            desc="Computing probabilities p(y) and p(y | theta)"
+        ):
+            accumulator = 0
+            for model in p_model:
+                p_y_theta = self.p_y_given_theta(
+                    y, model[0], model[1]
                 )
-            )
-            Z_denominator = torch.tensor(
-                list(
-                    map(
-                        lambda x: self.p_y_given_theta(
-                            x[1],
-                            denominator_models[x[0]][0],
-                            denominator_models[x[0]][1]
-                        ),
-                        enumerate(y_is)
-                    )
-                )
-            )
-            Z = Z_numerator / Z_denominator
-            for i in range(self.cfg.generation.num_monte_carlo):
-                for j in range(self.cfg.generation.num_monte_carlo):
-                    if i == j:
-                        continue
+                accumulator += p_y_theta
+                p_model[model][y] = p_y_theta
+            p_ensemble[y] = accumulator / len(p_model)
 
-        s = 0
-        for _ in range(self.cfg.generation.num_monte_carlo):
-            ensemble_entry = choice(self.ensemble)
-            s_outer = 0
-            for _ in range(self.cfg.generation.num_monte_carlo):
-                y = self(prompt, ensemble_entry)
-                s_inner = 0
-                for _ in range(self.cfg.generation.num_monte_carlo):
-                    y_prime = self(prompt, ensemble_entry)
-                    s_inner += self.similarity_measure(y, y_prime)
-                s_inner /= self.cfg.generation.num_monte_carlo
-                s_inner = torch.log(s_inner)
-                s_outer += s_inner
-            s_outer /= self.cfg.generation.num_monte_carlo
-            s += s_outer
-        s /= self.cfg.generation.num_monte_carlo
-        s *= -1
+        h_s3e_theta = 0
+        for model in p_model:
+            p_model_vals = torch.tensor(
+                list(p_model[model].values())
+            )
+            p_ensemble_vals = torch.tensor(
+                list(p_ensemble.values())
+            )
+            Z = p_model_vals / p_ensemble_vals
 
-        samples = list(map(self.sample, mc_y_samples))
-        return samples
+            # construct a matrix that is Z everywhere
+            # and 0 on the diagonal -- this allows
+            # us to easily get Z_j by summing over
+            # the entire row, without worrying
+            # about indices i and j
+            Z_j_s = Z.repeat(
+                Z.shape[0], 1
+            ).fill_diagonal_(0.0).sum(dim=1)
+            Z = Z.sum()
+
+            assert Z_j_s.shape == p_ensemble_vals.shape == p_model_vals.shape
+
+            inner_importance_weights = p_model_vals / (p_ensemble_vals * Z_j_s)
+            #         ^
+            #   p(y_i | theta)
+            #   --------------
+            #    p(y_i) * Z_j
+
+            model_similarity_matrix = similarity_matrix * inner_importance_weights
+
+            inner_sum = model_similarity_matrix.sum(
+                dim=0) / (len(p_ensemble) - 1)
+            # print(inner_sum)
+            log_arg = (p_model_vals * inner_sum) / (p_ensemble_vals * Z)
+            logarithm = torch.log(log_arg)
+            outer_sum = logarithm.mean()
+            h_s3e_theta += outer_sum
+
+        h_s3e_theta /= len(p_model)
+        h_s3e_theta *= -1
+        return h_s3e, h_s3e_theta
 
     def get_h_s3e_y_naive(self, prompt='What\'s the weather like tomorrow?'):
         """Naive sequential implementation of H_S3E(Y)"""
