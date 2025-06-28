@@ -257,7 +257,6 @@ class Ensemble:
                     # adding a precomputed similarity of y and y' (y_prime)
                     s_inner += similarity_matrix[y_idx, y_prime_idx]
                 s_inner /= self.cfg.generation.num_monte_carlo
-                # print(s_inner)
                 s_inner = torch.log(s_inner)
                 s_outer += s_inner
             s_outer /= self.cfg.generation.num_monte_carlo
@@ -290,7 +289,8 @@ class Ensemble:
         probability = 0
         for idx, label in enumerate(shift_labels[0]):
             probability += shift_logits[idx, label]
-        return probability.item()
+        probability /= len(tokenized_y['input_ids'][0])
+        return torch.exp(probability)
 
     # P(y) ? E_{theta ~ \Theta} P(y | theta)
 
@@ -392,8 +392,9 @@ class Ensemble:
 
             inner_sum = model_similarity_matrix.sum(
                 dim=0) / (len(p_ensemble) - 1)
-            # print(inner_sum)
             log_arg = (p_model_vals * inner_sum) / (p_ensemble_vals * Z)
+            # NOTE: dividing by 10 here makes
+            # the result (somewhat?) sensible
             logarithm = torch.log(log_arg)
             outer_sum = logarithm.mean()
             h_s3e_theta += outer_sum

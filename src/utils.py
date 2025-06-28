@@ -18,10 +18,8 @@ def s3e_ensemble(cfg):
     # Batched generation of uncertanties
     print(h_s3e, h_s3e_theta)
 
-    print('--------')
-    print('now batch')
-
-    h_s3e = ensemble.get_h_s3e_y_batched()
-    h_s3e_theta = ensemble.get_h_s3e_y_theta_batched()
-    print(h_s3e, h_s3e_theta)
+    # h_s3e = ensemble.get_h_s3e_y_batched()
+    # h_s3e_theta = ensemble.get_h_s3e_y_theta_batched()
+    # print(h_s3e_theta)
+    # print(h_s3e, h_s3e_theta)
     # print(h_s3e - h_s3e_theta)
